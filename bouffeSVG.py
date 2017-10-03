@@ -53,12 +53,16 @@ class OutMachine:
 
     def __init__(self):
         self._elements = []  # TODO: use string buffer
+        self._hasPath = False
 
     @property
     def value(self):
         return ''.join(self._elements)
 
     def addLOC(self, txt):
+        if txt[:5] == "path.":
+            if not self._hasPath:
+                self.beginPath()
         self._elements.append(txt + "\n")
 
     def addSize(self, size):
@@ -77,10 +81,16 @@ class OutMachine:
             self.addLOC(
                 "ctx.SetPen(wx.Pen(wx.Colour" + str(color) + "))")
 
+    def addEllipse(self, x, y, r):
+        self.addLOC(
+            "path.AddEllipse" + str((x, y, r))
+        )
+
     def beginPath(self):
         self.addLOC(
             "path = ctx.CreatePath()"
         )
+        self._hasPath = True
 
     def moveTo(self, pt):
         self.addLOC(
@@ -207,6 +217,13 @@ def SVG2IR(filename, outMachine=None):
             ok = True
             if tag == "path":
                 pass
+            elif tag == "circle":
+                out.addEllipse(
+                    float(child.get("cx")) + t.value.real,
+                    float(child.get("cy")) + t.value.imag,
+                    float(child.get("r"))
+                )
+                ok = False
             elif tag == "rect":
                 verbose_print("note: ignored rect")
                 ok = False
@@ -216,15 +233,16 @@ def SVG2IR(filename, outMachine=None):
             if ok:
                 ##
                 path = parse_path(child.get("d")).translated(t.value)
-                out.beginPath()
                 closingIn = False
                 movePt = None
                 for seg in path:
                     if movePt is not None and p(seg.end) == p(movePt):
-                        if not closingIn:
+                        closingIn = True
+                        # if the last segment is a line, just issue a close
+                        # statement, else spell out the curve segment
+                        if isinstance(seg, Line):
                             out.endPath()
-                            closingIn = True
-                        continue
+                            continue
                     elif closingIn:
                         closingIn = False
                         movePt = None
